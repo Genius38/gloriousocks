@@ -5,29 +5,30 @@
 #include <cstdlib>
 #include <cstdio>
 #include <iostream>
+#include <string>
 #include <netinet/in.h>
 #include <ev.h>
 
-#define PORT_NO 3033
-#define BUFFER_SIZE 1024
+const int PORT_NO = 3033;
 
-int total_clients = 0;  // Total number of connected clients
+// 总连接数
+int total_clients = 0;
 
 void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 
 void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 
-// For Server Stop
 void stop_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 
 
 int main() {
     struct ev_loop *loop = ev_default_loop(0);
 
-// Init stop mechanism
+/* ----Stop---- */
     ev_io stop_watcher;
     ev_io_init (&stop_watcher, stop_cb, /*STDIN_FILENO*/ 0, EV_READ);
     ev_io_start (loop, &stop_watcher);
+/* ------------ */
 
     int sd;
     struct sockaddr_in addr;
@@ -35,7 +36,7 @@ int main() {
     struct ev_io w_accept;
 
 // Create server socket
-    if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         return -1;
     }
@@ -96,7 +97,7 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
 /* Read client message */
 void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
-    char buffer[BUFFER_SIZE];
+    std::string buffer;
     ssize_t read;
 
     if (EV_ERROR & revents) {
@@ -105,7 +106,7 @@ void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     }
 
 // Receive message from client socket
-    read = recv(watcher->fd, buffer, BUFFER_SIZE, 0);
+    read = recv(watcher->fd, &buffer[0], buffer.length(), 0);
 
     if (read < 0) {
         perror("read error");
@@ -120,24 +121,23 @@ void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         total_clients--; // Decrement total_clients count
         printf("%d client(s) connected.\n", total_clients);
         return;
-    } else {
-        printf("message:%s\n", buffer);
     }
-
+    else {
+        std::cout << "message: " << buffer << std::endl;
+    }
 // Send message bach to the client
-    send(watcher->fd, buffer, static_cast<size_t>(read), 0);
-    bzero(buffer, static_cast<size_t>(read));
+    send(watcher->fd, &buffer[0], static_cast<size_t>(read), 0);
+    bzero(&buffer[0], static_cast<size_t>(read));
 }
 
 
-/* Stop server by any word type from keyboard*/
-void stop_cb (EV_P_ ev_io *w, int revents)
-{
+/* 输入停止服务器 */
+void stop_cb (struct ev_loop *loop, struct ev_io *watcher, int revents) {
     std::cout << "Server Stopped." << std::endl;
     // for one-shot events, one must manually stop the watcher
     // with its corresponding stop function.
-    ev_io_stop (EV_A_ w);
+    ev_io_stop (loop, watcher);
 
     // this causes all nested ev_run's to stop iterating
-    ev_break (EV_A_ EVBREAK_ALL);
+    ev_break (loop, EVBREAK_ALL);
 }

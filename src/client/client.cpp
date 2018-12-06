@@ -9,8 +9,7 @@
 #include <iostream>
 #include <netinet/in.h>
 
-#define PORT_NO 3033
-#define BUFFER_SIZE 1024
+const int PORT_NO = 3033;
 
 int main() {
     int sd;
@@ -19,7 +18,7 @@ int main() {
     std::string buffer = "";
 
 // Create client socket
-    if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         return -1;
     }
@@ -28,7 +27,7 @@ int main() {
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(PORT_NO);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_addr.s_addr = htons(INADDR_ANY);
 
 // Connect to server socket
     if (connect(sd, (struct sockaddr *) &addr, sizeof addr) < 0) {
@@ -39,10 +38,10 @@ int main() {
     while (buffer != "q") {
         // Read input from user and send message to the server
         std::getline(std::cin, buffer);
-        send(sd, buffer.c_str(), buffer.length(), 0);
+        send(sd, &buffer[0], buffer.length(), 0);
 
         // Receive message from the server
-        recv(sd, &buffer[0], BUFFER_SIZE, 0);
+        recv(sd, &buffer[0], buffer.length(), 0);
         std::cout << "message: " << buffer << std::endl;
     }
 
