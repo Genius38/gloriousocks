@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include "socks5.hpp"
 #include <netinet/in.h>
 #include <ev.h>
 
