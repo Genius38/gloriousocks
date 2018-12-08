@@ -6,6 +6,7 @@
 #define GLORIOUSOCKS_SOCKS5_HPP
 
 #include <ev.h>
+#include <unistd.h>
 
 #include <iostream>
 using namespace std;
@@ -132,18 +133,24 @@ namespace socks5 {
         struct  ev_io *ww;   // 写 watcher
     };
 
-    class server /* 服务器本体 */ {
-    public:
-        struct ev_loop  *loop;
-        conn_external   conn_ex;    // 外部連接
-        conn_internal   conn_in;    // 客戶端連接
-    private:
+    struct server_attr /* 服务器屬性 */ {
         size_t   ulen;            // 用戶名長度
         string   uname;           // 用戶名
         size_t   plen;            // 密碼長度
         string   passwd;          // 密碼
         uint16_t port;            // 代理端口
         uint8_t  auth_method;     // 认证方法
+    };
+
+    class server /* 服务器本体 */ {
+    public:
+        struct ev_loop  *loop;
+        conn_external   *conn_ex;   // 外部連接
+        conn_internal   *conn_in;   // 客戶端連接
+        server();                   // Init
+        virtual ~server();          // Destroy
+    private:
+        server_attr *attr;          // Attribute
     };
 
 }
