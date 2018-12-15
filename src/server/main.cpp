@@ -4,14 +4,63 @@
 
 #include <cstdlib>
 #include <cstdio>
+
 #include <iostream>
 #include <string>
-#include "socks5.hpp"
+
 #include <netinet/in.h>
 #include <ev.h>
+#include <unistd.h>
+
+#include "callback.h"
+
+
+/* Proxy server 屬性 */
+static socks5::server g_server = {
+    /*.ulen=*/          10,
+    /*.username=*/      "cricetinae",
+    /*.plen=*/          8,
+    /*.password=*/      "68503344",
+    /*.port=*/          15593,
+    /*.auth_method=*/   socks5::METHOD_USERNAMEPASSWORD,
+};
+
 
 int main(int argc, char **argv) {
     struct ev_loop *loop = ev_default_loop(0);
     struct ev_io server_watcher;
 
+    // socket fd
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        std::cout << "sock fd error" << std:: endl;
+        return EXIT_FAILURE;
+    }
+
+    struct sockaddr_in addr {};
+    memset((char *)&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(g_server.port);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        std::cout << "bind error:" << errno << std::endl;
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    if (listen(fd, 64) < 0) {
+        std::cout << "listen error:" << errno << std::endl;
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    server_watcher.fd = fd;
+    server_watcher.data = &g_server;   // Key, 夾帶數據內容傳入cb
+
+    ev_io_init(&server_watcher, accept_cb, server_watcher.fd, EV_READ);
+    ev_io_start(loop, &server_watcher);
+
+    ev_run(loop, 0);
+    return EXIT_SUCCESS;
 }

@@ -2,25 +2,42 @@
 // Created by qintairan on 18-12-7.
 //
 
-#include "socks5.hpp"
+#include "socks5.h"
 
-socks5::server::server() {
-    this->conn_in->rw = new ev_io();
-    this->conn_in->ww = new ev_io();
-    this->conn_ex->rw = new ev_io();
-    this->conn_ex->ww = new ev_io();
+socks5::conn::conn() {
+    // To Keep status
+    this->client.rw = new ev_io();
+    this->client.rw->data = this;
+
+    this->client.ww = new ev_io();
+    this->client.ww->data = this;
+
+    this->remote.rw = new ev_io();
+    this->remote.rw->data = this;
+
+    this->remote.ww = new ev_io();
+    this->remote.ww->data = this;
+
+    this->stage = socks5::STATUS_NEGO_METHODS;
 }
 
-socks5::server::~server() {
-    if (this->conn_in->sd) {
-        ev_io_stop(loop, this->conn_in->rw);
-        ev_io_stop(loop, this->conn_in->ww);
-        close(this->conn_in->sd);
+socks5::conn::~conn() {
+    // Close fd and stop supervisor
+    if (this->client.fd) {
+        ev_io_stop(loop, this->client.rw);
+        ev_io_stop(loop, this->client.ww);
+        close(this->client.fd);
     }
 
-    if (this->conn_ex->sd) {
-        ev_io_stop(loop, this->conn_ex->rw);
-        ev_io_stop(loop, this->conn_ex->ww);
-        close(this->conn_ex->sd);
+    if (this->remote.fd) {
+        ev_io_stop(loop, this->remote.rw);
+        ev_io_stop(loop, this->remote.ww);
+        close(this->remote.fd);
     }
+
+    // Clear Buffer
+    this->client.input.clear();
+    this->client.output.clear();
+    this->remote.input.clear();
+    this->remote.output.clear();
 }
