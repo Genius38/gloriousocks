@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
+#include <netinet/in.h>
 
 namespace utils {
     /*
@@ -32,14 +34,19 @@ namespace utils {
     /*
      * 設置網絡通信中 fd 爲非阻塞
      */
-    bool setSocketNonBlocking(int fd);
+    int setSocketNonBlocking(int fd);
 
 
     /*
-    * 設置網絡通信中 fd 可重用地址和端口 （防止error 98)
-    */
+     * 設置網絡通信中 fd 可重用地址和端口 （防止error 98)
+     */
     int setSocketReuseAddr(int fd);
 
+
+    /*
+     * 设置TCP_NODELAY选项
+     * */
+    int setTCPNoDelay(int fd);
 
     /*
      * 解决 string 与 char array 的相加

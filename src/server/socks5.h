@@ -15,7 +15,7 @@ namespace socks5 {
 
 /* Socks5 protocol [RFC 1928 / RFC 1929] */
 
-    const int VERSION               = 0x05;            // Socks5
+    const uint8_t VERSION           = 0x05;            // Socks5
 
     const uint8_t ADDRTYPE_IPV4     = 0x01;
     const uint8_t ADDRTYPE_DOMAIN   = 0x03;
@@ -50,7 +50,7 @@ namespace socks5 {
     struct method_request {
         uint8_t ver;             // socks版本（在socks5中是0x05）
         uint8_t nmethods;        // 在METHODS字段中出现的方法的数目
-        uint8_t methods[6];      // 客户端支持的认证方式列表，每个方法占1字节
+        uint8_t methods[];      // 客户端支持的认证方式列表，每个方法占1字节
     };
 
     struct method_response {
@@ -157,6 +157,7 @@ namespace socks5 {
         struct ev_loop  *loop;
         conn_external   remote;    // 外部連接
         conn_internal   client;    // 客戶端連接
+        uint8_t  auth_method;     // 认证方法
         uint8_t stage;
         struct server *server;     // Attribute
         conn();                    // Init

@@ -36,12 +36,10 @@ void utils::msg(const std::string& msg) {
 }
 
 
-bool utils::setSocketNonBlocking(int fd) {
-    if (fd < 0) return false;
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1) return false;
-    flags = (flags | O_NONBLOCK);
-    return fcntl(fd, F_SETFL, flags) == 0;
+int utils::setSocketNonBlocking(int fd) {
+    int flag = fcntl(fd, F_GETFL, 0);
+    if (flag == -1) return flag;
+    return fcntl(fd, F_SETFL, flag | O_NONBLOCK);
 }
 
 
@@ -53,7 +51,6 @@ int utils::setSocketReuseAddr(int fd) {
 
 
 void utils::str_concat_char(std::string& str, char* ch, const ssize_t size) {
-    char message[size];
-    memcpy(message, ch, size_t(size));
-    str += *(new string(message));
+    str.resize(str.length()+size);
+    memcpy(&str[0], ch, size_t(size));
 }

@@ -6,3 +6,6 @@ cd $(dirname $0)
 [ ! -d "build/" ] && mkdir build
 cd build/ && rm -rf *
 cmake .. && make -j4
+
+# TEST
+# curl --socks5 localhost:15593 -U cricetinae:68503344 www.google.com

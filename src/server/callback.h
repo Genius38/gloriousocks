@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <cstdlib>
 #include <string>
 
 #include "socks5.h"
