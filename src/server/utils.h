@@ -24,12 +24,6 @@ namespace utils {
 
 
     /*
-     * 顯示當前的握手階段
-     */
-    void display_stage(socks5::conn* conn);
-
-
-    /*
      * 單純用於打印信息
      */
     void msg(const string& msg);

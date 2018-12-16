@@ -31,11 +31,6 @@ void utils::close_conn(socks5::conn* conn, int fd,
 }
 
 
-void utils::display_stage(socks5::conn* conn) {
-    std::cout << "connection stage: [" << conn->stage << "]\n";
-}
-
-
 void utils::msg(const std::string& msg) {
     std::cout << msg << std::endl;
 }
