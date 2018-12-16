@@ -34,10 +34,4 @@ socks5::conn::~conn() {
         ev_io_stop(loop, this->remote.ww);
         close(this->remote.fd);
     }
-
-    // Clear Buffer
-    this->client.input.clear();
-    this->client.output.clear();
-    this->remote.input.clear();
-    this->remote.output.clear();
 }

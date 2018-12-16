@@ -28,7 +28,7 @@ static socks5::server g_server = {
 
 int main(int argc, char **argv) {
     struct ev_loop *loop = ev_default_loop(0);
-    struct ev_io server_watcher;
+    struct ev_io server_watcher{};
 
     // socket fd
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -40,8 +40,13 @@ int main(int argc, char **argv) {
     struct sockaddr_in addr {};
     memset((char *)&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(g_server.port);
+    addr.sin_port = htons(static_cast<uint16_t>(g_server.port));
     addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (!utils::setSocketNonBlocking(fd)) {
+        close(fd);
+        return EXIT_FAILURE;
+    }
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         std::cout << "bind error:" << errno << std::endl;
@@ -49,7 +54,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    if (listen(fd, 64) < 0) {
+    if (listen(fd, 256) < 0) {
         std::cout << "listen error:" << errno << std::endl;
         close(fd);
         return EXIT_FAILURE;

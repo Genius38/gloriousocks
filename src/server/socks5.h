@@ -48,9 +48,9 @@ namespace socks5 {
     const uint8_t METHOD_NOACCEPTABLE_METHODS               = 0xff;
 
     struct method_request {
-        uint8_t ver;        // socks版本（在socks5中是0x05）
-        uint8_t nmethods;   // 在METHODS字段中出现的方法的数目
-        uint8_t methods;    // 客户端支持的认证方式列表，每个方法占1字节
+        uint8_t ver;             // socks版本（在socks5中是0x05）
+        uint8_t nmethods;        // 在METHODS字段中出现的方法的数目
+        uint8_t methods[6];      // 客户端支持的认证方式列表，每个方法占1字节
     };
 
     struct method_response {
@@ -75,7 +75,7 @@ namespace socks5 {
         uint8_t  rsv;        // 保留字段
         uint8_t  atyp;       // 地址类型
         string   dst_addr;   // 目的地址
-        int dst_port;   // 目的端口
+        uint16_t dst_port;   // 目的端口
     };
 
 // socks5 回应
@@ -109,7 +109,7 @@ namespace socks5 {
         uint8_t  rsv;        // 保留字段 （需设置为X’00’）
         uint8_t  atyp;       // 地址类型
         string   bnd_addr;   // 服务器绑定的地址
-        int bnd_port;        // 服务器绑定的端口
+        uint16_t bnd_port;   // 服务器绑定的端口
     };
 
 
@@ -138,7 +138,7 @@ namespace socks5 {
         string   uname;           // 用戶名
         size_t   plen;            // 密碼長度
         string   passwd;          // 密碼
-        int port;                 // 代理端口
+        uint16_t port;            // 代理端口
         uint8_t  auth_method;     // 认证方法
     };
 
