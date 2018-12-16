@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-
+#include <sys/socket.h>
 
 namespace utils {
     /*
@@ -44,7 +44,13 @@ namespace utils {
     /*
     * 設置網絡通信中 fd 可重用地址和端口 （防止error 98)
     */
+    int setSocketReuseAddr(int fd);
 
+
+    /*
+     * 解决 string 与 char array 的相加
+     * */
+    void str_concat_char(std::string& str, char* ch, const ssize_t size);
 }
 
 
