@@ -87,8 +87,9 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             utils::str_concat_char(client->input, buffer, size);
         }
     } while(loopable);
-//    std::cout << "size: " << client->input.length() << std::endl;
+
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
     switch(conn->stage) {
 
     /* 1. 协商认证方法 */
@@ -116,10 +117,10 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
             // 方法匹配
             for(int i = 0; i < method_req->nmethods; i++) {
-                utils::msg("methods["+to_string(i)+"]: " + to_string(method_req->methods[i]));
                 if(server->auth_method == method_req->methods[i]) {
                     method_resp.method = server->auth_method;
                     conn->auth_method = server->auth_method;
+                    break;
                 }
             }
             utils::msg("Auth method confirm: "  + to_string(method_resp.method));
@@ -136,7 +137,6 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 清理接收緩存
             client->input.clear();
             free(buffer);
-            // 写前停止读监听
             ev_io_stop(loop, watcher);
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
@@ -144,15 +144,64 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             break;
         }
 
-    /* 2. 用户名密码认证 (如果是 NOAUTH 模式则直接到 EXTERNALHOST ) */
+    /* 2. 用户名密码认证 (如果是 NOAUTH 模式则直接 ESTABLISH_CONNECTION ) */
         case socks5::STATUS_UNAME_PASSWD: {
-            auto auth_req = (socks5::auth_request* ) &(client->input[0]);
-            utils::msg(to_string(auth_req->ver) + " " + to_string(auth_req->ulen));
-            utils::msg(*(new string(auth_req->uname)) + " " + *(new string(auth_req->passewd)));
-        }
+            // 结构体包含数组无法直接转型, 需要内存字节拆分
+            auto ver = (uint8_t)(*(&client->input[0]));     // Default 0x01
+            auto ulen = (uint8_t)(*(&client->input[1]));
+            auto uname = (char*) malloc(ulen * sizeof(char));
+            memcpy(uname, &client->input[2], ulen);
+            auto plen = (uint8_t)(*(&client->input[2+ulen]));
+            auto passwd = (char*) malloc(plen * sizeof(char));
+            memcpy(passwd, &client->input[2+ulen+1], plen);
 
+            std::string uname_str = *(new string(uname));
+            std::string passwd_str = *(new string(passwd));
+            utils::msg("[Stage2] uname:passwd -> " + uname_str + ":" + passwd_str);
+
+            socks5::auth_response auth_resp {};
+            auth_resp.ver = 0x01;
+            auth_resp.status = 0x00;
+
+            // 版本鉴定
+            if (ver != socks5::AUTH_USERNAMEPASSWORD_VER) {
+                utils::msg("[stage 2] auth version error");
+                auth_resp.status = 0x01;
+            }
+
+            // 长度和正确性校验
+            if((uname_str.length() != ulen || uname_str != conn->server->uname)
+                && (passwd_str.length() != plen || passwd_str != conn->server->passwd)) {
+                utils::msg("[stage 2] uname or passwd error");
+                auth_resp.status = 0x01;
+            }
+
+            // 如果账户密码不可用, 更改阶段
+            if (auth_resp.status == 0x01) {
+                conn->stage = socks5::STATUS_CLOSING;
+            }
+
+            // resp结构序列化
+            auto auth_resp_seq = (char*)&auth_resp;
+            utils::str_concat_char(client->output, auth_resp_seq, sizeof(auth_resp));
+
+            // 清理接收緩存
+            client->input.clear();
+            free(buffer);
+            ev_io_stop(loop, watcher);
+            // 传达回复 (回調 client_send_cb)
+            ev_io_start(loop, client->ww);
+
+            break;
+        }
+    /*3. 建立连接, 与远端服务器取得联系*/
+        case socks5::STATUS_ESTABLISH_CONNECTION: {
+
+
+        }
         default: {
             utils::msg("unvalid stage.");
+            utils::close_conn(conn, fd, "closing conn", false, nullptr);
             break;
         }
     }
@@ -168,7 +217,8 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     utils::msg("client_send_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
-    // 由 client_recv_cb 触发, 對 fd 进行写操作, 由于 write 一次未必写完, 将分多次写出
+    // 由 client_recv_cb 触发, 對 fd 进行写操作
+    // 由于 write 一次未必写完, 将分多次写出
     size_t idx = 0;
     bool loopable = true;
     do {
@@ -189,14 +239,28 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
     } while(loopable);
 
+    // 阶段处理
     switch(conn->stage) {
         case socks5::STATUS_NEGO_METHODS: {
-            if(conn->server->auth_method == socks5::METHOD_USERNAMEPASSWORD){
-                conn->stage = socks5::STATUS_UNAME_PASSWD;
-                // 开始接收下一阶段客户端报文 ( UNAME/PASSWD )
-                ev_io_start(loop, client->rw); break;
+            switch(conn->server->auth_method) {
+                case socks5::METHOD_USERNAMEPASSWORD: {
+                    conn->stage = socks5::STATUS_UNAME_PASSWD;
+                    ev_io_start(loop, client->rw); break;
+                }
+                case socks5::METHOD_NOAUTH: {
+                    ev_io_start(loop, client->rw); break;
+                }
+                case socks5::METHOD_GSSAPI: break;                              // 暂无
+                case socks5::METHOD_TOX7F_IANA_ASSIGNED: break;                 // 暂无
+                case socks5::METHOD_TOXFE_RESERVED_FOR_PRIVATE_METHODS: break;  // 暂无
+                case socks5::METHOD_NOACCEPTABLE_METHODS: break;                // 不可到达
+                default: break;
             }
-
+            break;
+        }
+        case socks5::STATUS_UNAME_PASSWD: {
+            conn->stage = socks5::STATUS_ESTABLISH_CONNECTION;
+            ev_io_start(loop, client->rw); break;
         }
         default: break;
     }
