@@ -27,9 +27,9 @@ namespace socks5 {
     struct auth_request {
         uint8_t ver;        // 鉴定协议版本
         uint8_t ulen;       // 用户名长度
-        string  uname;      // 用户名
+        char  uname[AUTH_USERNAMEPASSWORD_MAX_LEN];      // 用户名
         uint8_t plen;       // 密码长度
-        string  passed;     // 密码
+        char  passewd[AUTH_USERNAMEPASSWORD_MAX_LEN];     // 密码
     };
 
     const uint8_t AUTH_USERNAMEPASSWORD_STATUS_OK     = 0x00;
@@ -50,7 +50,7 @@ namespace socks5 {
     struct method_request {
         uint8_t ver;             // socks版本（在socks5中是0x05）
         uint8_t nmethods;        // 在METHODS字段中出现的方法的数目
-        uint8_t methods[0];      // 客户端支持的认证方式列表，每个方法占1字节
+        uint8_t methods[];      // 客户端支持的认证方式列表，每个方法占1字节
     };
 
     struct method_response {

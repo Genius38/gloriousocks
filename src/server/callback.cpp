@@ -74,7 +74,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
     bool loopable = true;// 标记是否继续循环
     do {
-        ssize_t size = read(fd, buffer, sizeof(buffer));
+        ssize_t size = read(fd, buffer, BUFFER_LEN);
         if(size < 0) {
             utils::close_conn(conn, fd, "close conn.", true, &loopable);
             continue;
@@ -87,9 +87,11 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             utils::str_concat_char(client->input, buffer, size);
         }
     } while(loopable);
-
+//    std::cout << "size: " << client->input.length() << std::endl;
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
     switch(conn->stage) {
+
+    /* 1. 协商认证方法 */
         case socks5::STATUS_NEGO_METHODS: {
             // 報文格式轉換
             auto method_req = (socks5::method_request* ) &(client->input[0]);
@@ -134,13 +136,21 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 清理接收緩存
             client->input.clear();
             free(buffer);
+            // 写前停止读监听
             ev_io_stop(loop, watcher);
-
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
 
             break;
         }
+
+    /* 2. 用户名密码认证 (如果是 NOAUTH 模式则直接到 EXTERNALHOST ) */
+        case socks5::STATUS_UNAME_PASSWD: {
+            auto auth_req = (socks5::auth_request* ) &(client->input[0]);
+            utils::msg(to_string(auth_req->ver) + " " + to_string(auth_req->ulen));
+            utils::msg(*(new string(auth_req->uname)) + " " + *(new string(auth_req->passewd)));
+        }
+
         default: {
             utils::msg("unvalid stage.");
             break;
@@ -164,6 +174,7 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     do {
         // output 已被发送完, 清空发送缓存
         if(client->output.length()-idx <= 0) {
+            // 清理发送缓存
             client->output.clear();
             ev_io_stop(loop, watcher);
             break;

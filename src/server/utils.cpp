@@ -55,5 +55,5 @@ int utils::setSocketReuseAddr(int fd) {
 
 void utils::str_concat_char(std::string& str, char* ch, const ssize_t size) {
     str.resize(str.length()+size);
-    memcpy(&str[0], ch, size_t(size));
+    memcpy(&str[str.length()-size], ch, size_t(size));
 }
