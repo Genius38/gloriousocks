@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    if (listen(fd, 256) < 0) {
+    if (listen(fd, 128) < 0) {
         std::cout << "listen error:" << errno << std::endl;
         close(fd);
         return EXIT_FAILURE;
@@ -73,6 +73,12 @@ int main(int argc, char **argv) {
     ev_io_init(&server_watcher, accept_cb, server_watcher.fd, EV_READ);
     ev_io_start(loop, &server_watcher);
 
+    std::cout         <<
+    "   Server Start. "  <<
+    "   port: "          << g_server.port                    <<
+    "   auth_method:  "   << to_string(g_server.auth_method)  << std::endl;
+
     ev_run(loop, 0);
+
     return EXIT_SUCCESS;
 }

@@ -10,11 +10,17 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int fd = watcher->fd;
     auto *server = (socks5::server *)watcher->data;     // accept 的信息夾帶 服務器屬性
 
-    bool loopable = true;   // 標記是否繼續循環
+    bool loopable = true;   // 循环标记
     do {
-        sockaddr_in addr;
+        sockaddr_in addr {};
         socklen_t len = sizeof(sockaddr_in);
         int client_fd = accept(fd, (sockaddr*)&addr, &len);
+
+        // 链接信息
+        char ip[BUFFER_LEN];
+        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, BUFFER_LEN);
+        utils::msg("host: " + *(new string(ip)) + "   " + "port: " + to_string(ntohs(addr.sin_port)));
+
         if (client_fd == -1) {
             utils::close_conn(nullptr, client_fd, "accept error", true, &loopable);
             break;
@@ -25,13 +31,13 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             continue;
         }
 
-        if(utils::setSocketReuseAddr(fd) < 0) {
+        if(utils::setSocketReuseAddr(client_fd) < 0) {
             utils::close_conn(nullptr, client_fd, "set reuseaddr: ", true, nullptr);
             continue;
         }
 
         auto conn = new socks5::conn();
-        // 結束於該指針被非本函數釋放
+        // 结束于该指针被其他函数析构
         if(conn == nullptr) {
             utils::close_conn(conn, client_fd, "connection fail", false, nullptr);
             continue;
@@ -41,15 +47,15 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         conn->server = server;
         conn->client.fd = client_fd;
 
+        utils::msg("accept, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
         ev_io_init(conn->client.rw, client_recv_cb, client_fd, EV_READ);
         ev_io_init(conn->client.ww, client_send_cb, client_fd, EV_WRITE);
+
         ev_io_start(loop, conn->client.rw);
 
-        char ip[BUFFER_LEN];
-        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, BUFFER_LEN);
-        utils::msg("host: " + *(new string(ip)) + "   "
-                   + "port: " + to_string(ntohs(addr.sin_port)));
     } while(loopable);
+
 }
 
 
@@ -64,7 +70,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     // 拼接報文片段
     char buffer[BUFFER_LEN];
-    bool loopable = true;// 標記是否繼續循環
+    bool loopable = true;// 标记是否继续循环
     do {
         ssize_t size = read(fd, buffer, sizeof(buffer));
         if(size < 0) {
@@ -72,13 +78,14 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             continue;
         }
         else if(size == 0) {
-            utils::close_conn(conn, fd, "close conn.", false, &loopable);
+            utils::close_conn(conn, fd, "closed conn.", false, &loopable);
             continue;
         }
         else {
             utils::str_concat_char(client->input, buffer, size);
         }
     } while(loopable);
+
 
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
     switch(conn->stage) {
@@ -105,17 +112,17 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             method_resp.method = socks5::METHOD_NOACCEPTABLE_METHODS;
 
             // 方法匹配
-
             for(int i = 0; i < method_req->nmethods; i++) {
+                utils::msg("methods["+to_string(i)+"]: " + to_string(method_req->methods[i]));
                 if(server->auth_method == method_req->methods[i]) {
                     method_resp.method = server->auth_method;
                     conn->auth_method = server->auth_method;
                 }
             }
-
             utils::msg("Auth method confirm: "  + to_string(method_resp.method));
 
-            auto method_resp_seq = (char*)&method_resp;    // resp结构序列化
+            // resp结构序列化
+            auto method_resp_seq = (char*)&method_resp;
             utils::str_concat_char(client->output, method_resp_seq, sizeof(method_resp));
 
             // 如果協商結果不可用, 更改階段
@@ -127,8 +134,9 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             client->input.clear();
             ev_io_stop(loop, watcher);
 
-            // 傳達回復 (回調 client_send_cb)
+            // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
+
             break;
         }
         default: {

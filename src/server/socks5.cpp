@@ -23,13 +23,13 @@ socks5::conn::conn() {
 
 socks5::conn::~conn() {
     // Close fd and stop supervisor
-    if (this->client.fd) {
+    if (this->client.fd > 0) {
         ev_io_stop(loop, this->client.rw);
         ev_io_stop(loop, this->client.ww);
         close(this->client.fd);
     }
 
-    if (this->remote.fd) {
+    if (this->remote.fd > 0) {
         ev_io_stop(loop, this->remote.rw);
         ev_io_stop(loop, this->remote.ww);
         close(this->remote.fd);
