@@ -1,5 +1,18 @@
 #### Intro
 
-libev 4.24 FROM [http://software.schmorp.de/pkg/libev.html](http://software.schmorp.de/pkg/libev.html)
+这是一个基于libev写的Socks5 Proxy Server
 
-udns 0.4 FROM [http://www.corpit.ru/mjt/udns.html](http://www.corpit.ru/mjt/udns.html)
+当前状态：未完成
+
+***
+
+##### Run
+```bash
+git clone --recursive https://github.com/Genius38/gloriousocks.git
+./build/gloriousocks_server
+```
+***
+##### Test
+```bash
+curl --socks5 localhost:15593 -U cricetinae:123456 www.google.com
+```
