@@ -10,19 +10,15 @@ void utils::close_conn(socks5::conn* conn, int fd,
 
     if (has_errno && (errno != EAGAIN) && (errno != EWOULDBLOCK)) {
         std::cout << msg << ", errno: " << errno << std::endl;
+        if (conn) {
+            delete conn;
+            conn = nullptr;
+        }
+        if (fd > 0) close(fd);
     }
 
     if (!has_errno) {
         std::cout << msg << std::endl;
-    }
-
-    if (conn) {
-        delete conn;
-        conn = nullptr;
-    }
-
-    if (fd > 0) {
-        close(fd);
     }
 
     if(loopable) {

@@ -16,21 +16,23 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         socklen_t len = sizeof(sockaddr_in);
         int client_fd = accept(fd, (sockaddr*)&addr, &len);
 
-        // 链接信息
-        char ip[BUFFER_LEN];
-        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, BUFFER_LEN);
-        utils::msg("host: " + *(new string(ip)) + "   " + "port: " + to_string(ntohs(addr.sin_port)));
-
         if (client_fd == -1) {
             utils::close_conn(nullptr, client_fd, "accept error", true, &loopable);
             break;
         }
 
+        // 链接信息
+        char ip[BUFFER_LEN];
+        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, BUFFER_LEN);
+        utils::msg("host: " + *(new string(ip)) + "   " + "port: " + to_string(ntohs(addr.sin_port)));
+
+        // 设置非阻塞
         if (utils::setSocketNonBlocking(client_fd) < 0) {
             utils::close_conn(nullptr, client_fd, "set nonblocking: ", true, nullptr);
             continue;
         }
 
+        // 设置地址复用
         if(utils::setSocketReuseAddr(client_fd) < 0) {
             utils::close_conn(nullptr, client_fd, "set reuseaddr: ", true, nullptr);
             continue;
@@ -69,7 +71,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     utils::msg("client_recv_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
     // 拼接報文片段
-    char buffer[BUFFER_LEN];
+    char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
     bool loopable = true;// 标记是否继续循环
     do {
         ssize_t size = read(fd, buffer, sizeof(buffer));
@@ -85,7 +87,6 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             utils::str_concat_char(client->input, buffer, size);
         }
     } while(loopable);
-
 
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
     switch(conn->stage) {
@@ -132,6 +133,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
             // 清理接收緩存
             client->input.clear();
+            free(buffer);
             ev_io_stop(loop, watcher);
 
             // 传达回复 (回調 client_send_cb)
