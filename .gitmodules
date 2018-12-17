@@ -1,0 +1,3 @@
+[submodule "thirdparty/libev"]
+	path = thirdparty/libev
+	url = https://github.com/enki/libev.git

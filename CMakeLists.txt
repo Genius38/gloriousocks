@@ -4,8 +4,7 @@ project(gloriousocks)
 set(CMAKE_CXX_STANDARD 11)
 
 # libev udns setting
-set(LIBEV_DIR ${CMAKE_SOURCE_DIR}/thirdparty/libev)
-set(UDNS_DIR ${CMAKE_SOURCE_DIR}/thirdparty/udns)
+set(LIBEV_DIR ${CMAKE_SOURCE_DIR}/thirdparty/libev/build)
 include_directories(
         ${LIBEV_DIR}/include
         ${UDNS_DIR}
@@ -24,7 +23,7 @@ file(GLOB CLIENT_SRC
         ${CMAKE_SOURCE_DIR}/src/client/*.h)
 
 add_executable(gloriousocks_server ${SERVER_SRC})
-target_link_libraries(gloriousocks_server ev udns)
+target_link_libraries(gloriousocks_server ev)
 
 add_executable(gloriousocks_client ${CLIENT_SRC})
-target_link_libraries(gloriousocks_client ev udns)
+target_link_libraries(gloriousocks_client ev)
