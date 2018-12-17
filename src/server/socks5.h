@@ -25,7 +25,7 @@ namespace socks5 {
     const uint8_t AUTH_USERNAMEPASSWORD_VER           = 0x01;
     const int AUTH_USERNAMEPASSWORD_MAX_LEN           = 256;
     struct auth_request {
-        uint8_t ver;        // 鉴定协议版本
+        uint8_t ver;        // The VER field contains the current version of the subnegotiation, which is X'01'
         uint8_t ulen;       // 用户名长度
         char  uname[AUTH_USERNAMEPASSWORD_MAX_LEN];      // 用户名
         uint8_t plen;       // 密码长度
@@ -36,7 +36,7 @@ namespace socks5 {
     const uint8_t AUTH_USERNAMEPASSWORD_STATUS_FAIL   = 0x01;
     struct auth_response {
         uint8_t ver;        // 鉴定协议版本
-        uint8_t status;     // 鉴定状态
+        uint8_t status;     // 鉴定状态 A STATUS field of X'00' indicates success
     };
 
 // socks5 方法協商
@@ -50,7 +50,7 @@ namespace socks5 {
     struct method_request {
         uint8_t ver;             // socks版本（在socks5中是0x05）
         uint8_t nmethods;        // 在METHODS字段中出现的方法的数目
-        uint8_t methods[];      // 客户端支持的认证方式列表，每个方法占1字节
+        uint8_t methods[];       // 客户端支持的认证方式列表，每个方法占1字节
     };
 
     struct method_response {
@@ -65,17 +65,19 @@ namespace socks5 {
 
     const uint8_t REQUEST_RSV               = 0x00;
 
+    const int ADDR_MAX_LEN                  = 253;
+
     struct request {
-        uint8_t  ver;        // socks版本
-        uint8_t  cmd;        /* SOCK的命令码：
-                                  CONNECT X’01’
-                                  BIND X’02’
-                                  UDP ASSOCIATE X’03’
-                             */
-        uint8_t  rsv;        // 保留字段
-        uint8_t  atyp;       // 地址类型
-        string   dst_addr;   // 目的地址
-        uint16_t dst_port;   // 目的端口
+        uint8_t  ver;                           // socks版本
+        uint8_t  cmd;                           /* SOCK的命令码：
+                                                      CONNECT X’01’
+                                                      BIND X’02’
+                                                      UDP ASSOCIATE X’03’
+                                                */
+        uint8_t  rsv;                           // 保留字段
+        uint8_t  atyp;                          // 地址类型
+        char     dst_addr[ADDR_MAX_LEN];        // 目的地址
+        uint16_t dst_port;                      // 目的端口
     };
 
 // socks5 回应
@@ -93,23 +95,23 @@ namespace socks5 {
     const uint8_t RESPONSE_RSV                         = 0x00;
 
     struct response {
-        uint8_t  ver;        // socks版本（在socks5中是0x05）
-        uint8_t  rep;        /* 应答状态码：
-                                  X’00’ succeeded
-                                  X’01’ general socks server failure
-                                  X’02’ connection not allowed by ruleset
-                                  X’03’ Network unreachable
-                                  X’04’ Host unreachable
-                                  X’05’ Connection refused
-                                  X’06’ TTL expired
-                                  X’07’ Command not supported
-                                  X’08’ Address type not supported
-                                  X’09’ to X’FF’ unassigned
-                             */
-        uint8_t  rsv;        // 保留字段 （需设置为X’00’）
-        uint8_t  atyp;       // 地址类型
-        string   bnd_addr;   // 服务器绑定的地址
-        uint16_t bnd_port;   // 服务器绑定的端口
+        uint8_t  ver;                        // socks版本（在socks5中是0x05）
+        uint8_t  rep;                        /* 应答状态码：
+                                                  X’00’ succeeded
+                                                  X’01’ general socks server failure
+                                                  X’02’ connection not allowed by ruleset
+                                                  X’03’ Network unreachable
+                                                  X’04’ Host unreachable
+                                                  X’05’ Connection refused
+                                                  X’06’ TTL expired
+                                                  X’07’ Command not supported
+                                                  X’08’ Address type not supported
+                                                  X’09’ to X’FF’ unassigned
+                                             */
+        uint8_t  rsv;                        // 保留字段 （需设置为X’00’）
+        uint8_t  atyp;                       // 地址类型
+        char   bnd_addr[ADDR_MAX_LEN];       // 服务器绑定的地址
+        uint16_t bnd_port;                   // 服务器绑定的端口
     };
 
 
@@ -142,15 +144,15 @@ namespace socks5 {
         uint8_t  auth_method;     // 认证方法
     };
 
-    const uint8_t STATUS_NEGO_METHODS  = 0x01;
-    const uint8_t STATUS_UNAME_PASSWD  = 0x02;
-    const uint8_t STATUS_EXTERNAL_HOST = 0x03;
-    const uint8_t STATUS_DNS_QUERY     = 0x04;
-    const uint8_t STATUS_CONNECTING    = 0x05;
-    const uint8_t STATUS_CONNETED      = 0x06;
-    const uint8_t STATUS_STREAM        = 0x07;
-    const uint8_t STATUS_CLOSING       = 0x08;
-    const uint8_t STATUS_CLOSED        = 0x09;
+    const uint8_t STATUS_NEGO_METHODS           = 0x01;
+    const uint8_t STATUS_UNAME_PASSWD           = 0x02;
+    const uint8_t STATUS_ESTABLISH_CONNECTION   = 0x03;
+    const uint8_t STATUS_DNS_QUERY              = 0x04;
+    const uint8_t STATUS_CONNECTING             = 0x05;
+    const uint8_t STATUS_CONNETED               = 0x06;
+    const uint8_t STATUS_STREAM                 = 0x07;
+    const uint8_t STATUS_CLOSING                = 0x08;
+    const uint8_t STATUS_CLOSED                 = 0x09;
 
     class conn /* 連接 */ {
     public:

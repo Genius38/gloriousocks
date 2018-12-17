@@ -19,8 +19,8 @@
 static socks5::server g_server = {
     /*.ulen=*/          10,
     /*.username=*/      "cricetinae",
-    /*.plen=*/          8,
-    /*.password=*/      "68503344",
+    /*.plen=*/          6,
+    /*.password=*/      "123456",
     /*.port=*/          15593,
     /*.auth_method=*/   socks5::METHOD_USERNAMEPASSWORD,
 };
@@ -73,10 +73,10 @@ int main(int argc, char **argv) {
     ev_io_init(&server_watcher, accept_cb, server_watcher.fd, EV_READ);
     ev_io_start(loop, &server_watcher);
 
-    std::cout         <<
+    std::cout            << "[Socks5]"
     "   Server Start. "  <<
     "   port: "          << g_server.port                    <<
-    "   auth_method:  "   << to_string(g_server.auth_method)  << std::endl;
+    "   auth_method:  "  << to_string(g_server.auth_method)  << std::endl;
 
     ev_run(loop, 0);
 
