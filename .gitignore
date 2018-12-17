@@ -1,6 +1,3 @@
 .idea/
 cmake-build-debug/
 build/
-.deps/
-.libs/
-thirdparty/
