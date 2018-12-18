@@ -17,9 +17,6 @@ namespace socks5 {
 
     const uint8_t VERSION           = 0x05;            // Socks5
 
-    const uint8_t ADDRTYPE_IPV4     = 0x01;
-    const uint8_t ADDRTYPE_DOMAIN   = 0x03;
-    const uint8_t ADDRTYPE_IPV6     = 0x04;
 
 // socks5 认证协议
     const uint8_t AUTH_USERNAMEPASSWORD_VER           = 0x01;
@@ -65,6 +62,10 @@ namespace socks5 {
 
     const uint8_t REQUEST_RSV               = 0x00;
 
+    const uint8_t ADDRTYPE_IPV4     = 0x01;
+    const uint8_t ADDRTYPE_DOMAIN   = 0x03;
+    const uint8_t ADDRTYPE_IPV6     = 0x04;
+
     const int ADDR_MAX_LEN                  = 253;
 
     struct request {
@@ -75,7 +76,11 @@ namespace socks5 {
                                                       UDP ASSOCIATE X’03’
                                                 */
         uint8_t  rsv;                           // 保留字段
-        uint8_t  atyp;                          // 地址类型
+        uint8_t  atyp;                          /* 地址类型
+                                                      IP V4 address: X'01'
+                                                      DOMAINNAME: X'03'
+                                                      IP V6 address: X'04'
+                                                */
         char     dst_addr[ADDR_MAX_LEN];        // 目的地址
         uint16_t dst_port;                      // 目的端口
     };
@@ -109,7 +114,11 @@ namespace socks5 {
                                                   X’09’ to X’FF’ unassigned
                                              */
         uint8_t  rsv;                        // 保留字段 （需设置为X’00’）
-        uint8_t  atyp;                       // 地址类型
+        uint8_t  atyp;                       /* 地址类型
+                                                  IP V4 address: X'01'
+                                                  DOMAINNAME: X'03'
+                                                  IP V6 address: X'04'
+                                             */
         char   bnd_addr[ADDR_MAX_LEN];       // 服务器绑定的地址
         uint16_t bnd_port;                   // 服务器绑定的端口
     };
@@ -125,6 +134,7 @@ namespace socks5 {
         struct  ev_io *ww;   // 写 watcher
         uint8_t atype;       // 地址类型
         string  addr;        // 地址
+        uint16_t port;       // 端口
     };
 
     struct conn_internal /* 与客戶端連接 */ {
