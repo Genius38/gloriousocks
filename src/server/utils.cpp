@@ -9,13 +9,16 @@ void utils::close_conn(socks5::conn* conn, int fd,
                 const std::string& msg, bool has_errno, bool* loopable) {
 
     // 报错关闭
-    if (has_errno && (errno != EAGAIN) && (errno != EWOULDBLOCK) && EINPROGRESS != errno) {
-        std::cout << msg << ", errno: " << errno << std::endl;
-        if (conn) {
-            delete conn;
-            conn = nullptr;
+    if (has_errno) {
+        if((errno != EAGAIN) &&
+          (errno != EWOULDBLOCK)) {
+            if (conn) {
+                delete conn;
+                conn = nullptr;
+            }
+            if (fd > 0) close(fd);
         }
-        if (fd > 0) close(fd);
+        std::cout << msg << ", errno: " << errno << std::endl;
     }
 
     // 非报错直接关闭
@@ -49,7 +52,6 @@ int utils::setSocketNonBlocking(int fd) {
 int utils::setSocketReuseAddr(int fd) {
     int enable = 1;
     return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-
 }
 
 

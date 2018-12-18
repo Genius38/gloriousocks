@@ -135,9 +135,9 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             }
 
             // 清理接收緩存
+            ev_io_stop(loop, watcher);
             client->input.clear();
             free(buffer);
-            ev_io_stop(loop, watcher);
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
 
@@ -186,9 +186,9 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             utils::str_concat_char(client->output, auth_resp_seq, sizeof(auth_resp));
 
             // 清理接收緩存
+            ev_io_stop(loop, watcher);
             client->input.clear();
             free(buffer);
-            ev_io_stop(loop, watcher);
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
 
@@ -241,7 +241,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     // 检查地址与端口
                     char ipv4_addr_buf[32];
                     inet_ntop(AF_INET, dst_addr, ipv4_addr_buf, sizeof(ipv4_addr_buf));
-                    utils::msg("[DETAILS] addr:port --> " + *(new string(ipv4_addr_buf)) +
+                    utils::msg("[DETAILS] addr:port -> " + *(new string(ipv4_addr_buf)) +
                                ":" + to_string(ntohs(*dst_port)));
                     // 由于需要转发, 实际上没有必要对字节序进行处理
                     // 但是对于 remote 结构体, 需要保存可读信息用以调试
@@ -252,10 +252,14 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     addr.sin_port = *dst_port;
                     addr.sin_addr.s_addr = *dst_addr;
 
-                    int remote_fd = socket(AF_INET, SOCK_STREAM, 0);
-                    remote->fd = remote_fd;
+                    // 清理接收緩存
+                    ev_io_stop(loop, watcher);
+                    client->input.clear();
+                    free(buffer);
 
-                    if (remote->fd < 0) {
+                    // 创建远端套接字
+                    int remote_fd = socket(AF_INET, SOCK_STREAM, 0);
+                    if (remote_fd < 0) {
                         utils::close_conn(conn, remote_fd, "remote fd closed.", false, nullptr);
                         return;
                     }
@@ -272,23 +276,22 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                         return;
                     }
 
-                    std::cout << "Try to connect." << std::endl;
-
                     // 建立TCP连接, remote_fd 则监听本次建立连接的端口 (Bind/Listen 是建立本地监听)
-                    if (connect(remote_fd, (struct sockaddr *)&addr, sizeof(sockaddr_in)) < 0) {
-                        utils::close_conn(nullptr, remote_fd, "remote connect error: ", true, nullptr);
-                        return;
+                    if (connect(remote_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+                        // 非阻塞 Socket 在通信过程中不能立马 resp, 则会返回, 但 TCP 握手仍在进行
+                        // 此处需要忽略 115 错误
+                        if((errno != EINPROGRESS )){
+                            utils::close_conn(nullptr, remote_fd, "remote set reuseaddr: ", true, nullptr);
+                            return;
+                        }
                     }
+
+                    remote->fd = remote_fd;
 
                     std::cout << "Connected." << std::endl;
 
                     // 状态更变: 连接中
                     conn->stage = socks5::STATUS_CONNECTING;
-
-                    // 清理接收緩存
-                    client->input.clear();
-                    free(buffer);
-                    ev_io_stop(loop, watcher);
 
                     // 序列化 resp
                     auto resp_seq = (char*)&resp;
