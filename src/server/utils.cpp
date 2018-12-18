@@ -9,7 +9,7 @@ void utils::close_conn(socks5::conn* conn, int fd,
                 const std::string& msg, bool has_errno, bool* loopable) {
 
     // 报错关闭
-    if (has_errno && (errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+    if (has_errno && (errno != EAGAIN) && (errno != EWOULDBLOCK) && EINPROGRESS != errno) {
         std::cout << msg << ", errno: " << errno << std::endl;
         if (conn) {
             delete conn;

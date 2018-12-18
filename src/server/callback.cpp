@@ -100,7 +100,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 版本校驗
             if(socks5::VERSION != method_req->ver) {
                 utils::msg("client ver: " + to_string(method_req->ver));
-                utils::close_conn(conn, -1, "version error", false, nullptr);
+                utils::close_conn(conn, fd, "version error", false, nullptr);
                 return;
             }
 
@@ -115,8 +115,8 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             method_resp.ver = socks5::VERSION;
             method_resp.method = socks5::METHOD_NOACCEPTABLE_METHODS;
 
-            // 方法匹配
-            for(int i = 0; i < method_req->nmethods; i++) {
+            // 方法匹配 (经验上倒序匹配更快)
+            for(int i = method_req->nmethods - 1; i >= 0; i--) {
                 if(server->auth_method == method_req->methods[i]) {
                     method_resp.method = server->auth_method;
                     conn->auth_method = server->auth_method;
@@ -157,7 +157,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
             std::string uname_str = *(new string(uname));
             std::string passwd_str = *(new string(passwd));
-            utils::msg("[Stage2] uname:passwd -> " + uname_str + ":" + passwd_str);
+            utils::msg("[AUTH] uname:passwd -> " + uname_str + ":" + passwd_str);
 
             socks5::auth_response auth_resp {};
             auth_resp.ver = 0x01;
@@ -165,14 +165,14 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
             // 版本鉴定
             if (ver != socks5::AUTH_USERNAMEPASSWORD_VER) {
-                utils::msg("[stage 2] auth version error");
-                auth_resp.status = 0x01;
+                utils::msg("auth version error.");
+                auth_resp.status = 0x01;        // 设置status让client发起关闭
             }
 
             // 长度和正确性校验
             if((uname_str.length() != ulen || uname_str != conn->server->uname)
                 && (passwd_str.length() != plen || passwd_str != conn->server->passwd)) {
-                utils::msg("[stage 2] uname or passwd error");
+                utils::msg("uname or passwd error");
                 auth_resp.status = 0x01;
             }
 
@@ -196,15 +196,136 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
     /*3. 建立连接, 与远端服务器取得联系*/
         case socks5::STATUS_ESTABLISH_CONNECTION: {
+            // 结构体包含数组无法直接转型, 需要内存字节拆分
+
+            // 版本校验
+            auto ver = (uint8_t)(*(&client->input[0]));     // Socks5
+            if (ver != socks5::VERSION) {
+                utils::close_conn(conn, fd, "version error", false, nullptr);
+                return;
+            }
 
 
-        }
+//            auto rsv = (uint8_t)(*(&client->input[2]));  // 保留字段 0X00
+//            utils::msg("rsv: " + to_string(rsv));
+
+            /* 检查地址类型： IPV4, 域名（需要解析）, IPV6 */
+            auto atype = (uint8_t)(*(&client->input[3]));
+            remote->atype = atype;
+
+            // 创建对 remote 的回复
+            socks5::response resp {};
+            resp.ver = ver;
+            resp.rep = socks5::RESPONSE_REP_SUCCESS;
+            resp.atyp = atype;
+
+            // 创建 sockaddr for remote
+            struct sockaddr_in addr {};
+            memset((char *)&addr, 0, sizeof(addr));
+
+            // 命令码校验 (目前仅使用到 CONNECT)
+            auto cmd = (uint8_t)(*(&client->input[1]));
+            if (cmd != socks5::REQUEST_CMD_CONNECT) {
+                resp.rep = socks5::RESPONSE_REP_COMMAND_NOT_SUPPORTED;
+            }
+
+            switch(atype) {
+                case socks5::ADDRTYPE_IPV4: /* ipv4 */{
+                    // ipv4 长度为 32 = 4Byte
+                    auto dst_addr = (uint32_t*)malloc(4*sizeof(char));
+                    memcpy(dst_addr, &client->input[4], 4);
+
+                    auto *dst_port = (uint16_t*)malloc(sizeof(uint16_t));  // uint16_t转换到主机字节序
+                    memcpy(dst_port, &client->input[8], 2);
+
+                    // 检查地址与端口
+                    char ipv4_addr_buf[32];
+                    inet_ntop(AF_INET, dst_addr, ipv4_addr_buf, sizeof(ipv4_addr_buf));
+                    utils::msg("[DETAILS] addr:port --> " + *(new string(ipv4_addr_buf)) +
+                               ":" + to_string(ntohs(*dst_port)));
+                    // 由于需要转发, 实际上没有必要对字节序进行处理
+                    // 但是对于 remote 结构体, 需要保存可读信息用以调试
+                    remote->addr = *(new string(ipv4_addr_buf));
+                    remote->port = ntohs(*dst_port);
+
+                    addr.sin_family = AF_INET;
+                    addr.sin_port = *dst_port;
+                    addr.sin_addr.s_addr = *dst_addr;
+
+                    int remote_fd = socket(AF_INET, SOCK_STREAM, 0);
+                    remote->fd = remote_fd;
+
+                    if (remote->fd < 0) {
+                        utils::close_conn(conn, remote_fd, "remote fd closed.", false, nullptr);
+                        return;
+                    }
+
+                    // 设置非阻塞
+                    if (utils::setSocketNonBlocking(remote_fd) < 0) {
+                        utils::close_conn(nullptr, remote_fd, "remote set nonblocking: ", true, nullptr);
+                        return;
+                    }
+
+                    // 设置地址复用
+                    if(utils::setSocketReuseAddr(remote_fd) < 0) {
+                        utils::close_conn(nullptr, remote_fd, "remote set reuseaddr: ", true, nullptr);
+                        return;
+                    }
+
+                    std::cout << "Try to connect." << std::endl;
+
+                    // 建立TCP连接, remote_fd 则监听本次建立连接的端口 (Bind/Listen 是建立本地监听)
+                    if (connect(remote_fd, (struct sockaddr *)&addr, sizeof(sockaddr_in)) < 0) {
+                        utils::close_conn(nullptr, remote_fd, "remote connect error: ", true, nullptr);
+                        return;
+                    }
+
+                    std::cout << "Connected." << std::endl;
+
+                    // 状态更变: 连接中
+                    conn->stage = socks5::STATUS_CONNECTING;
+
+                    // 清理接收緩存
+                    client->input.clear();
+                    free(buffer);
+                    ev_io_stop(loop, watcher);
+
+                    // 序列化 resp
+                    auto resp_seq = (char*)&resp;
+                    utils::str_concat_char(client->output, resp_seq, sizeof(resp));
+
+                    // 传达回复 (回調 client_send_cb)
+                    ev_io_start(loop, client->ww);
+
+                    // 对远端发起请求 (回調 remote_send_cb)
+                    ev_io_init(remote->rw, remote_recv_cb, remote->fd, EV_READ);
+                    ev_io_init(remote->ww, remote_send_cb, remote->fd, EV_WRITE);
+                    ev_io_start(loop, remote->ww);
+
+                    break;
+                }
+                case socks5::ADDRTYPE_DOMAIN: {
+
+                    // TODO
+                    // 取得域名长度(端口号位于之后)
+
+                    break;
+                }
+                case socks5::ADDRTYPE_IPV6: {
+
+                    // TODO
+
+                    break;
+                }
+                default: break;
+            }
+        } // switch details
         default: {
             utils::msg("unvalid stage.");
             utils::close_conn(conn, fd, "closing conn", false, nullptr);
             break;
         }
-    }
+    } // switch outtest
     utils::msg("client_recv_cb deal with stage, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }
 
@@ -266,4 +387,18 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     }
 
     utils::msg("client_send_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+}
+
+void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
+
+}
+
+void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
+    int fd = watcher->fd;
+    auto *conn = (socks5::conn *)watcher->data;         // C/S's data 夾帶的是連接
+    auto *server = conn->server;
+    auto *client = &(conn->client);
+    auto *remote = &(conn->remote);
+
+    utils::msg("remote_send_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }
