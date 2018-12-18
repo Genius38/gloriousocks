@@ -7,11 +7,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(LIBEV_DIR ${CMAKE_SOURCE_DIR}/thirdparty/libev/build)
 include_directories(
         ${LIBEV_DIR}/include
-        ${UDNS_DIR}
 )
 link_directories(
         ${LIBEV_DIR}/lib
-        ${UDNS_DIR}
 )
 
 file(GLOB SERVER_SRC
