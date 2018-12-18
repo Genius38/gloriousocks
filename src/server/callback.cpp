@@ -278,8 +278,13 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
                     // 建立TCP连接, remote_fd 则监听本次建立连接的端口 (Bind/Listen 是建立本地监听)
                     if (connect(remote_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-                        // 非阻塞 Socket 在通信过程中不能立马 resp, 则会返回, 但 TCP 握手仍在进行
-                        // 此处需要忽略 115 错误
+                        /*
+                         * #define EINPROGRESS 115
+                         * The socket is nonblocking and the connection cannot be complete immediately.
+                         * Since the connect() operation is already in progress,
+                         * any subsequent operation on the socket is resulting into EINPROGRESS error code.
+                         * 此处需要忽略 115 错误
+                         * */
                         if((errno != EINPROGRESS )){
                             utils::close_conn(nullptr, remote_fd, "remote set reuseaddr: ", true, nullptr);
                             return;
