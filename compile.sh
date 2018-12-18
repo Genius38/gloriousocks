@@ -6,10 +6,13 @@ PROJECT_ROOT=`pwd`
 
 echo "ThridParty Make"
 [ ! -d "thirdparty/libev" ] && echo "No libev, please use --recursive to clone." && exit 1
-[ ! -d "thirdparty/libev/build" ] && mkdir thirdparty/libev/build
-cd $PROJECT_ROOT/thirdparty/libev
-./configure -prefix=$PROJECT_ROOT/thirdparty/libev/build
-make -j4 && make install
+
+# if libev not exist
+[ ! -d "thirdparty/libev/build" ] \
+&& mkdir thirdparty/libev/build \
+&& cd $PROJECT_ROOT/thirdparty/libev \
+&& ./configure -prefix=$PROJECT_ROOT/thirdparty/libev/build \
+&& make -j4 && make install
 
 echo "Gloriousocks Make"
 cd $PROJECT_ROOT
@@ -17,5 +20,6 @@ cd $PROJECT_ROOT
 cd build/ && rm -rf *
 cmake .. && make -j4
 
-# TEST
-# curl --socks5 localhost:15593 -U cricetinae:123456 www.google.com
+# TEST 第二个是自己解析域名, 否则由curl来解析
+# curl -x socks5://localhost:15593 -U cricetinae:123456 www.google.com
+# curl -x socks5h://localhost:15593 -U cricetinae:123456 www.google.com
