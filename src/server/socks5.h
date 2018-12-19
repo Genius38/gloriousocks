@@ -133,7 +133,7 @@ namespace socks5 {
         struct   ev_io *rw;   // 读 watcher
         struct   ev_io *ww;   // 写 watcher
         uint8_t  atype;       // 地址类型
-        char     addr[128];   // 地址 (由于需要解析, 最大长度为ipv6)
+        char*    addr;        // 地址 (由于需要解析, 最大长度为ipv6)
         uint16_t port;        // 端口
     };
 
