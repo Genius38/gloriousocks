@@ -227,6 +227,13 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             auto cmd = (uint8_t)(*(&client->input[1]));
             if (cmd != socks5::REQUEST_CMD_CONNECT) {
                 resp.rep = socks5::RESPONSE_REP_COMMAND_NOT_SUPPORTED;
+                // 序列化 resp 并直接回复
+                auto resp_seq = (char*)&resp;
+                utils::str_concat_char(client->output, resp_seq, sizeof(resp));
+                ev_io_stop(loop, watcher);
+                ev_io_start(loop, client->ww);
+                utils::close_conn(conn, fd, "remote cmd error.", false, nullptr);
+                return;
             }
 
             switch(atype) {
@@ -243,10 +250,11 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     inet_ntop(AF_INET, dst_addr, ipv4_addr_buf, sizeof(ipv4_addr_buf));
                     utils::msg("[DETAILS] addr:port -> " + *(new string(ipv4_addr_buf)) +
                                ":" + to_string(ntohs(*dst_port)));
+
                     // 由于需要转发, 实际上没有必要对字节序进行处理
-                    // 但是对于 remote 结构体, 需要保存可读信息用以调试
-                    remote->addr = *(new string(ipv4_addr_buf));
-                    remote->port = ntohs(*dst_port);
+                    remote->addr = (char*)malloc(4*sizeof(char));
+                    memcpy(remote->addr, &client->input[4], 4);
+                    remote->port = *dst_port;
 
                     addr.sin_family = AF_INET;
                     addr.sin_port = *dst_port;
@@ -285,7 +293,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                          * any subsequent operation on the socket is resulting into EINPROGRESS error code.
                          * 此处需要忽略 115 错误
                          * */
-                        if((errno != EINPROGRESS )){
+                        if((errno != EINPROGRESS)){
                             utils::close_conn(nullptr, remote_fd, "remote set reuseaddr: ", true, nullptr);
                             return;
                         }
@@ -293,19 +301,11 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
                     remote->fd = remote_fd;
 
-                    std::cout << "Connected." << std::endl;
-
                     // 状态更变: 连接中
                     conn->stage = socks5::STATUS_CONNECTING;
 
-                    // 序列化 resp
-                    auto resp_seq = (char*)&resp;
-                    utils::str_concat_char(client->output, resp_seq, sizeof(resp));
-
-                    // 传达回复 (回調 client_send_cb)
-                    ev_io_start(loop, client->ww);
-
-                    // 对远端发起请求 (回調 remote_send_cb)
+                    // 将远端信息传递给 client (回調 remote_send_cb)
+                    // 或将通信信息传递给 client
                     ev_io_init(remote->rw, remote_recv_cb, remote->fd, EV_READ);
                     ev_io_init(remote->ww, remote_send_cb, remote->fd, EV_WRITE);
                     ev_io_start(loop, remote->ww);
@@ -327,7 +327,16 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                 }
                 default: break;
             }
+            break;
         } // switch details
+        case socks5::STATUS_STREAM: {
+            // 接收 client 的请求并转发至 remote (回调 remote_send_cb)
+            remote->output = client->input;
+            client->input.clear();
+            free(buffer);
+            ev_io_start(loop, remote->ww);
+            break;
+        }
         default: {
             utils::msg("unvalid stage.");
             utils::close_conn(conn, fd, "closing conn", false, nullptr);
@@ -346,7 +355,6 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     utils::msg("client_send_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
-    // 由 client_recv_cb 触发, 對 fd 进行写操作
     // 由于 write 一次未必写完, 将分多次写出
     size_t idx = 0;
     bool loopable = true;
@@ -368,7 +376,6 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
     } while(loopable);
 
-    // 阶段处理
     switch(conn->stage) {
         case socks5::STATUS_NEGO_METHODS: {
             switch(conn->server->auth_method) {
@@ -389,7 +396,14 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
         case socks5::STATUS_UNAME_PASSWD: {
             conn->stage = socks5::STATUS_ESTABLISH_CONNECTION;
-            ev_io_start(loop, client->rw); break;
+            ev_io_start(loop, client->rw);
+            break;
+        }
+        case socks5::STATUS_CONNETED: {
+            conn->stage = socks5::STATUS_STREAM;
+            ev_io_start(loop, client->rw);  // client 发送请求
+            ev_io_start(loop, remote->rw);  // remote 发送数据
+            break;
         }
         default: break;
     }
@@ -398,7 +412,39 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 }
 
 void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
+    int fd = watcher->fd;
+    auto *conn = (socks5::conn *)watcher->data;         // C/S's data 夾帶的是連接
+    auto *server = conn->server;
+    auto *client = &(conn->client);
+    auto *remote = &(conn->remote);
 
+    utils::msg("remote_recv_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
+    // 拼接報文片段
+    char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
+    bool loopable = true;// 标记是否继续循环
+    do {
+        ssize_t size = read(fd, buffer, BUFFER_LEN);
+        if(size < 0) {
+            utils::close_conn(conn, fd, "close conn.", true, &loopable);
+            continue;
+        }
+        else if(size == 0) {
+            utils::close_conn(conn, fd, "closed conn.", false, &loopable);
+            continue;
+        }
+        else {
+            utils::str_concat_char(remote->input, buffer, size);
+        }
+    } while(loopable);
+
+    utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
+    // 将数据转移至 client->output 并回调 client_send_cb 进行转发
+    client->output = remote->input;
+    remote->input.clear();
+    free(buffer);
+    ev_io_start(loop, client->ww);
 }
 
 void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
@@ -409,4 +455,68 @@ void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     auto *remote = &(conn->remote);
 
     utils::msg("remote_send_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
+    switch(conn->stage) {
+        // 连接阶段, 向client发送回应信息
+        case socks5::STATUS_CONNECTING: {
+            socks5::response resp {};
+            resp.ver = socks5::VERSION;
+            resp.rep = socks5::RESPONSE_REP_SUCCESS;
+            resp.atyp = remote->atype;
+            resp.rsv = 0x00;    // 保留字段
+            if(remote->atype == socks5::ADDRTYPE_IPV4) {
+                resp.bnd_addr = (char*) malloc(4*sizeof(char));
+                memcpy(resp.bnd_addr, remote->addr, 4);
+            }
+            if(remote->atype == socks5::ADDRTYPE_DOMAIN) {
+                // TODO
+            }
+            if(remote->atype == socks5::ADDRTYPE_IPV6) {
+                // TODO
+            }
+            resp.bnd_port = remote->port;
+
+            // 序列化 resp
+            auto resp_seq = (char*)&resp;
+            utils::str_concat_char(client->output, resp_seq, sizeof(resp));
+
+            ev_io_stop(loop, watcher);
+
+            // 传达回复 (回調 client_send_cb)
+            ev_io_start(loop, client->ww);
+
+            // 至此连接已完成
+            std::cout << "Connected." << std::endl;
+            conn->stage = socks5::STATUS_CONNETED;
+
+            break;
+        }
+        // 转发阶段,
+        case socks5::STATUS_STREAM: {
+            // 由于 write 一次未必写完, 将分多次写出
+            size_t idx = 0;
+            bool loopable = true;
+            do {
+                // output 已被发送完, 清空发送缓存
+                if(remote->output.length()-idx <= 0) {
+                    // 清理发送缓存
+                    remote->output.clear();
+                    ev_io_stop(loop, watcher);
+                    break;
+                }
+                ssize_t size = write(fd, &remote->output[idx], remote->output.length()-idx);
+                if (size < 0) {
+                    utils::close_conn(conn, fd, "close conn.", true, &loopable);
+                    continue;
+                }
+                else {
+                    idx += size;
+                }
+            } while(loopable);
+            remote->output.clear();
+        }
+        default: break;
+    } // switch
+
+    utils::msg("remote_send_cb end here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }

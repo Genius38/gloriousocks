@@ -66,8 +66,6 @@ namespace socks5 {
     const uint8_t ADDRTYPE_DOMAIN   = 0x03;
     const uint8_t ADDRTYPE_IPV6     = 0x04;
 
-    const int ADDR_MAX_LEN                  = 253;
-
     struct request {
         uint8_t  ver;                           // socks版本
         uint8_t  cmd;                           /* SOCK的命令码：
@@ -81,7 +79,7 @@ namespace socks5 {
                                                       DOMAINNAME: X'03'
                                                       IP V6 address: X'04'
                                                 */
-        char     dst_addr[ADDR_MAX_LEN];        // 目的地址
+        char*     dst_addr;                     // 目的地址
         uint16_t dst_port;                      // 目的端口
     };
 
@@ -119,7 +117,7 @@ namespace socks5 {
                                                   DOMAINNAME: X'03'
                                                   IP V6 address: X'04'
                                              */
-        char   bnd_addr[ADDR_MAX_LEN];       // 服务器绑定的地址
+        char*   bnd_addr;                    // 服务器绑定的地址
         uint16_t bnd_port;                   // 服务器绑定的端口
     };
 
