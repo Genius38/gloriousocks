@@ -426,11 +426,13 @@ void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     do {
         ssize_t size = read(fd, buffer, BUFFER_LEN);
         if(size < 0) {
-            utils::close_conn(conn, fd, "close conn.", true, &loopable);
+            utils::close_conn(conn, -1, "close conn.", true, &loopable);
             continue;
         }
         else if(size == 0) {
-            utils::close_conn(conn, fd, "closed conn.", false, &loopable);
+            utils::close_conn(conn, -1, "closed conn.", false, &loopable);
+            ev_io_stop(loop, watcher);
+            conn->stage = socks5::STATUS_CLOSING;
             continue;
         }
         else {

@@ -17,8 +17,8 @@ void utils::close_conn(socks5::conn* conn, int fd,
                 conn = nullptr;
             }
             if (fd > 0) close(fd);
+            std::cout << msg << ", errno: " << errno << std::endl;
         }
-        std::cout << msg << ", errno: " << errno << std::endl;
     }
 
     // 非报错直接关闭
