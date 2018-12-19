@@ -127,14 +127,14 @@ namespace socks5 {
 /* Socks5 ProxyServer */
 
     struct conn_external /* 与外部資源連接 */ {
-        int     fd;          // socket 描述符
-        string  input;       // 輸入 buffer
-        string  output;      // 輸出 buffer
-        struct  ev_io *rw;   // 读 watcher
-        struct  ev_io *ww;   // 写 watcher
-        uint8_t atype;       // 地址类型
-        string  addr;        // 地址
-        uint16_t port;       // 端口
+        int      fd;          // socket 描述符
+        string   input;       // 輸入 buffer
+        string   output;      // 輸出 buffer
+        struct   ev_io *rw;   // 读 watcher
+        struct   ev_io *ww;   // 写 watcher
+        uint8_t  atype;       // 地址类型
+        char     addr[128];   // 地址 (由于需要解析, 最大长度为ipv6)
+        uint16_t port;        // 端口
     };
 
     struct conn_internal /* 与客戶端連接 */ {
