@@ -16,6 +16,7 @@
 
 #include "socks5.h"
 #include "utils.h"
+#include "io.h"
 
 void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 

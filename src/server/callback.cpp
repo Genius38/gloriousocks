@@ -4,7 +4,6 @@
 
 #include "callback.h"
 
-const int BUFFER_LEN = 256;     // 默認 read 長度
 
 void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int fd = watcher->fd;
@@ -22,8 +21,8 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
 
         // 链接信息
-        char ip[BUFFER_LEN];
-        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, BUFFER_LEN);
+        char ip[32];
+        inet_ntop(addr.sin_family, &addr.sin_addr.s_addr, ip, 32);
         utils::msg("host: " + *(new string(ip)) + "   " + "port: " + to_string(ntohs(addr.sin_port)));
 
         // 设置非阻塞
@@ -70,25 +69,13 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     utils::msg("client_recv_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
-    // 拼接報文片段
-    char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
-    bool loopable = true;// 标记是否继续循环
-    do {
-        ssize_t size = read(fd, buffer, BUFFER_LEN);
-        if(size < 0) {
-            utils::close_conn(conn, fd, "close conn.", true, &loopable);
-            continue;
-        }
-        else if(size == 0) {
-            utils::close_conn(conn, fd, "closed conn.", false, &loopable);
-            continue;
-        }
-        else {
-            utils::str_concat_char(client->input, buffer, size);
-        }
-    } while(loopable);
+    // 读取
+    io::readFromFD(loop, watcher, fd, client->input);
 
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
+    if(conn == nullptr)
+        return;   // STREAM 读取结束
 
     switch(conn->stage) {
 
@@ -137,7 +124,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 清理接收緩存
             ev_io_stop(loop, watcher);
             client->input.clear();
-            free(buffer);
+
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
 
@@ -149,11 +136,14 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 结构体包含数组无法直接转型, 需要内存字节拆分
             auto ver = (uint8_t)(*(&client->input[0]));     // Default 0x01
             auto ulen = (uint8_t)(*(&client->input[1]));
-            auto uname = (char*) malloc(ulen * sizeof(char));
+            auto uname = (char*) malloc(ulen * sizeof(char) + 1);
             memcpy(uname, &client->input[2], ulen);
             auto plen = (uint8_t)(*(&client->input[2+ulen]));
-            auto passwd = (char*) malloc(plen * sizeof(char));
+            auto passwd = (char*) malloc(plen * sizeof(char) + 1);
             memcpy(passwd, &client->input[2+ulen+1], plen);
+
+            uname[ulen] = '\0';
+            passwd[plen] = '\0';
 
             std::string uname_str = *(new string(uname));
             std::string passwd_str = *(new string(passwd));
@@ -188,7 +178,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 清理接收緩存
             ev_io_stop(loop, watcher);
             client->input.clear();
-            free(buffer);
+
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
 
@@ -263,7 +253,6 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     // 清理接收緩存
                     ev_io_stop(loop, watcher);
                     client->input.clear();
-                    free(buffer);
 
                     // 创建远端套接字
                     int remote_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -333,7 +322,6 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             // 接收 client 的请求并转发至 remote (回调 remote_send_cb)
             remote->output = client->input;
             client->input.clear();
-            free(buffer);
             ev_io_start(loop, remote->ww);
             break;
         }
@@ -356,25 +344,7 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     utils::msg("client_send_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
     // 由于 write 一次未必写完, 将分多次写出
-    size_t idx = 0;
-    bool loopable = true;
-    do {
-        // output 已被发送完, 清空发送缓存
-        if(client->output.length()-idx <= 0) {
-            // 清理发送缓存
-            client->output.clear();
-            ev_io_stop(loop, watcher);
-            break;
-        }
-        ssize_t size = write(fd, &client->output[idx], client->output.length()-idx);
-        if (size < 0) {
-            utils::close_conn(conn, fd, "close conn.", true, &loopable);
-            continue;
-        }
-        else {
-            idx += size;
-        }
-    } while(loopable);
+    io::writeToFD(loop, watcher, fd, client->output);
 
     switch(conn->stage) {
         case socks5::STATUS_NEGO_METHODS: {
@@ -405,9 +375,11 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             ev_io_start(loop, remote->rw);  // remote 发送数据
             break;
         }
+        case socks5::STATUS_CLOSING: {
+            utils::close_conn(conn, fd, "close conn.", true, nullptr);
+        }
         default: break;
     }
-
     utils::msg("client_send_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }
 
@@ -420,31 +392,15 @@ void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     utils::msg("remote_recv_cb start here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
-    // 拼接報文片段
-    char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
-    bool loopable = true;// 标记是否继续循环
-    do {
-        ssize_t size = read(fd, buffer, BUFFER_LEN);
-        if(size < 0) {
-            utils::close_conn(conn, -1, "close conn.", true, &loopable);
-            continue;
-        }
-        else if(size == 0) {
-            ev_io_stop(loop, watcher);
-            conn->stage = socks5::STATUS_CLOSING;
-            continue;
-        }
-        else {
-            utils::str_concat_char(remote->input, buffer, size);
-        }
-    } while(loopable);
+    // 读取 (true 表示会停止该 watcher)
+    io::readFromFD(loop, watcher, fd, remote->input, true);
 
-    utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+    utils::msg("remote_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
     // 将数据转移至 client->output 并回调 client_send_cb 进行转发
     client->output = remote->input;
     remote->input.clear();
-    free(buffer);
+
     ev_io_start(loop, client->ww);
 }
 
@@ -492,32 +448,12 @@ void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
             break;
         }
-        // 转发阶段,
-        case socks5::STATUS_STREAM: {
-            // 由于 write 一次未必写完, 将分多次写出
-            size_t idx = 0;
-            bool loopable = true;
-            do {
-                // output 已被发送完, 清空发送缓存
-                if(remote->output.length()-idx <= 0) {
-                    // 清理发送缓存
-                    remote->output.clear();
-                    ev_io_stop(loop, watcher);
-                    break;
-                }
-                ssize_t size = write(fd, &remote->output[idx], remote->output.length()-idx);
-                if (size < 0) {
-                    utils::close_conn(conn, fd, "close conn.", true, &loopable);
-                    continue;
-                }
-                else {
-                    idx += size;
-                }
-            } while(loopable);
-            remote->output.clear();
-        }
         default: break;
     } // switch
+
+    // 由于 write 一次未必写完, 将分多次写出
+    io::writeToFD(loop, watcher, fd, remote->output);
+    remote->output.clear();
 
     utils::msg("remote_send_cb end here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }
