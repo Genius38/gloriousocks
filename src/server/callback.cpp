@@ -321,7 +321,6 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         }
         default: {
             utils::msg("unvalid stage.");
-            utils::close_conn(conn, fd, "closing conn", false, nullptr);
             break;
         }
     } // switch outtest
