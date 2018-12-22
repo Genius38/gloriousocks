@@ -80,19 +80,16 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     /* 1. 协商认证方法 */
         case socks5::STATUS_NEGO_METHODS: {
-            // 報文格式轉換
-            auto method_req = (socks5::method_request* ) &(client->input[0]);
+            // 结构体包含数组无法直接转型, 需要内存字节拆分
+            auto ver = (uint8_t)(*(&client->input[0]));
+            auto nmethods = (uint8_t)(*(&client->input[1]));
+            auto methods = (char*)malloc(nmethods*sizeof(uint8_t));
+            memcpy(methods, &client->input[2], nmethods);
 
             // 版本校驗
-            if(socks5::VERSION != method_req->ver) {
-                utils::msg("client ver: " + to_string(method_req->ver));
+            if(socks5::VERSION != ver) {
+                utils::msg("client ver: " + to_string(ver));
                 utils::close_conn(conn, fd, "version error", false, nullptr);
-                return;
-            }
-
-            // 方法數长度校验 (method数 + uint_8字段×2)
-            if(sizeof(*method_req) + method_req->nmethods < method_req->nmethods + 2) {
-                utils::msg("nmethod lackness.");
                 return;
             }
 
@@ -102,8 +99,8 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             method_resp.method = socks5::METHOD_NOACCEPTABLE_METHODS;
 
             // 方法匹配 (经验上倒序匹配更快)
-            for(int i = method_req->nmethods - 1; i >= 0; i--) {
-                if(server->auth_method == method_req->methods[i]) {
+            for(int i = nmethods - 1; i >= 0; i--) {
+                if(server->auth_method == methods[i]) {
                     method_resp.method = server->auth_method;
                     conn->auth_method = server->auth_method;
                     break;
@@ -342,7 +339,6 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     // 由于 write 一次未必写完, 将分多次写出
     io::writeToFD(loop, watcher, fd, client->output);
-
     switch(conn->stage) {
         case socks5::STATUS_NEGO_METHODS: {
             switch(conn->server->auth_method) {
@@ -439,20 +435,20 @@ void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             }
 
             // 序列化 resp
+            /* 重要：此处序列化的长度应该为 4 + 4 + 2 = 10, 因为 resp 中有指针, 不能直接用 sizeof*/
             auto resp_seq = (char*)&resp;
-            utils::str_concat_char(client->output, resp_seq, sizeof(resp));
-
+            utils::str_concat_char(client->output, resp_seq, 4+4+2);
             // 至此连接已完成
             std::cout << "Connected." << std::endl;
             conn->stage = socks5::STATUS_CONNETED;
 
+            ev_io_stop(loop, watcher);
+
             // 传达回复 (回調 client_send_cb)
             ev_io_start(loop, client->ww);
-            ev_io_stop(loop, watcher);
 
 
             utils::msg("remote_send_cb finish here(reply), fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
-
             return; // 这里需要直接 return, 避免 remote_fd 中的信息额外传回给远端
         }
         default: break;

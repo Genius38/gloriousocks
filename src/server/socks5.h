@@ -45,9 +45,9 @@ namespace socks5 {
     const uint8_t METHOD_NOACCEPTABLE_METHODS               = 0xff;
 
     struct method_request {
-        uint8_t ver;             // socks版本（在socks5中是0x05）
-        uint8_t nmethods;        // 在METHODS字段中出现的方法的数目
-        uint8_t methods[];       // 客户端支持的认证方式列表，每个方法占1字节
+        uint8_t  ver;             // socks版本（在socks5中是0x05）
+        uint8_t  nmethods;        // 在METHODS字段中出现的方法的数目
+        uint8_t* methods;         // 客户端支持的认证方式列表，每个方法占1字节
     };
 
     struct method_response {
