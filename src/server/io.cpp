@@ -19,9 +19,9 @@ void io::readFromFD(struct ev_loop *loop, struct ev_io *watcher,
             utils::close_conn(conn, -1, "close conn.", true, &loopable);
         }
         else if(size == 0) {    // 读到 EOF
+            conn->stage = socks5::STATUS_CLOSING;
             if(stop_watcher) {
                 ev_io_stop(loop, watcher);
-                conn->stage = socks5::STATUS_CLOSING;
                 break;
             }
             else {
