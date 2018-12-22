@@ -14,5 +14,5 @@ git clone --recursive https://github.com/Genius38/gloriousocks.git
 ***
 ##### Test
 ```bash
-curl --socks5 localhost:15593 -U cricetinae:123456 www.google.com
+curl --socks5 localhost:15593 -U cricetinae:123456 www.baidu.com
 ```
