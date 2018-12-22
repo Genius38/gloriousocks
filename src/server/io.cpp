@@ -16,38 +16,35 @@ void io::readFromFD(struct ev_loop *loop, struct ev_io *watcher,
     do {
         ssize_t size = read(fd, buffer, BUFFER_LEN);
         if(size < 0) {
-            utils::close_conn(conn, fd, "close conn.", true, &loopable);
-            break;
+            utils::close_conn(conn, -1, "close conn.", true, &loopable);
         }
-        else if(size == 0) {
+        else if(size == 0) {    // 读到 EOF
             if(stop_watcher) {
                 ev_io_stop(loop, watcher);
                 conn->stage = socks5::STATUS_CLOSING;
+                break;
             }
             else {
                 utils::close_conn(conn, fd, "closed conn.", false, &loopable);
             }
-            break;
-
         }
         else {
             utils::str_concat_char(input, buffer, size);
         }
     } while(loopable);
+
     free(buffer);
 }
 
 
 void io::writeToFD(struct ev_loop *loop, struct ev_io *watcher,
-                   int fd, std::string& output, bool stop_watcher) {
+                   int fd, std::string& output) {
     auto *conn = (socks5::conn *)watcher->data;
-    char *buffer = (char*)malloc(BUFFER_LEN * sizeof(char));
     size_t idx = 0;
     bool loopable = true;
     do {
         // output 已被发送完, 清空发送缓存
         if(output.length()-idx <= 0) {
-            // 清理发送缓存
             output.clear();
             ev_io_stop(loop, watcher);
             break;
@@ -55,7 +52,7 @@ void io::writeToFD(struct ev_loop *loop, struct ev_io *watcher,
         ssize_t size = write(fd, &output[idx], output.length()-idx);
         if (size < 0) {
             utils::close_conn(conn, fd, "close conn.", true, &loopable);
-            continue;
+            break;
         }
         else {
             idx += size;

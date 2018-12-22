@@ -19,7 +19,7 @@ namespace io {
 
     // 从 buffer 中写至 fd
     void writeToFD(struct ev_loop *loop, struct ev_io *watcher,
-                   int fd, std::string& output, bool stop_watcher=false);
+                   int fd, std::string& output);
 
 }
 

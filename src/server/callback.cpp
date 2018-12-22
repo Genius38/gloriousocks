@@ -62,7 +62,7 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
 void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int fd = watcher->fd;
-    auto *conn = (socks5::conn *)watcher->data;         // C/S's data 夾帶的是連接
+    auto *conn = (socks5::conn *)watcher->data;
     auto *server = conn->server;
     auto *client = &(conn->client);
     auto *remote = &(conn->remote);
@@ -74,8 +74,7 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     utils::msg("client_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
-    if(conn == nullptr)
-        return;   // STREAM 读取结束
+
 
     switch(conn->stage) {
 
@@ -250,23 +249,17 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     addr.sin_port = *dst_port;
                     addr.sin_addr.s_addr = *dst_addr;
 
-                    // 清理接收緩存
-                    ev_io_stop(loop, watcher);
-                    client->input.clear();
-
                     // 创建远端套接字
                     int remote_fd = socket(AF_INET, SOCK_STREAM, 0);
                     if (remote_fd < 0) {
                         utils::close_conn(conn, remote_fd, "remote fd closed.", false, nullptr);
                         return;
                     }
-
                     // 设置非阻塞
                     if (utils::setSocketNonBlocking(remote_fd) < 0) {
                         utils::close_conn(nullptr, remote_fd, "remote set nonblocking: ", true, nullptr);
                         return;
                     }
-
                     // 设置地址复用
                     if(utils::setSocketReuseAddr(remote_fd) < 0) {
                         utils::close_conn(nullptr, remote_fd, "remote set reuseaddr: ", true, nullptr);
@@ -287,6 +280,10 @@ void client_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                             return;
                         }
                     }
+
+                    // 清理接收緩存
+                    ev_io_stop(loop, watcher);
+                    client->input.clear();
 
                     remote->fd = remote_fd;
 
@@ -354,6 +351,7 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
                     ev_io_start(loop, client->rw); break;
                 }
                 case socks5::METHOD_NOAUTH: {
+                    conn->stage = socks5::STATUS_ESTABLISH_CONNECTION;  // Directly
                     ev_io_start(loop, client->rw); break;
                 }
                 case socks5::METHOD_GSSAPI: break;                              // 暂无
@@ -376,7 +374,8 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             break;
         }
         case socks5::STATUS_CLOSING: {
-            utils::close_conn(conn, fd, "close conn.", true, nullptr);
+            utils::close_conn(conn, fd, "close conn.", false, nullptr);
+            break;
         }
         default: break;
     }
@@ -385,7 +384,7 @@ void client_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
 void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int fd = watcher->fd;
-    auto *conn = (socks5::conn *)watcher->data;         // C/S's data 夾帶的是連接
+    auto *conn = (socks5::conn *)watcher->data;
     auto *server = conn->server;
     auto *client = &(conn->client);
     auto *remote = &(conn->remote);
@@ -398,15 +397,16 @@ void remote_recv_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     utils::msg("remote_recv_cb finish here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 
     // 将数据转移至 client->output 并回调 client_send_cb 进行转发
-    client->output = remote->input;
+    client->output += remote->input;
     remote->input.clear();
 
+    // 将数据传至客户端
     ev_io_start(loop, client->ww);
 }
 
 void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int fd = watcher->fd;
-    auto *conn = (socks5::conn *)watcher->data;         // C/S's data 夾帶的是連接
+    auto *conn = (socks5::conn *)watcher->data;
     auto *server = conn->server;
     auto *client = &(conn->client);
     auto *remote = &(conn->remote);
@@ -421,9 +421,15 @@ void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             resp.rep = socks5::RESPONSE_REP_SUCCESS;
             resp.atyp = remote->atype;
             resp.rsv = 0x00;    // 保留字段
+            resp.bnd_port = remote->port;
             if(remote->atype == socks5::ADDRTYPE_IPV4) {
                 resp.bnd_addr = (char*) malloc(4*sizeof(char));
                 memcpy(resp.bnd_addr, remote->addr, 4);
+                // 检查地址与端口
+                char ipv4_addr_buf[32];
+                inet_ntop(AF_INET, resp.bnd_addr, ipv4_addr_buf, sizeof(ipv4_addr_buf));
+                utils::msg("[CONNECTING] addr:port -> " + *(new string(ipv4_addr_buf)) +
+                           ":" + to_string(ntohs(resp.bnd_port)));
             }
             if(remote->atype == socks5::ADDRTYPE_DOMAIN) {
                 // TODO
@@ -431,29 +437,29 @@ void remote_send_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
             if(remote->atype == socks5::ADDRTYPE_IPV6) {
                 // TODO
             }
-            resp.bnd_port = remote->port;
 
             // 序列化 resp
             auto resp_seq = (char*)&resp;
             utils::str_concat_char(client->output, resp_seq, sizeof(resp));
 
-            ev_io_stop(loop, watcher);
-
-            // 传达回复 (回調 client_send_cb)
-            ev_io_start(loop, client->ww);
-
             // 至此连接已完成
             std::cout << "Connected." << std::endl;
             conn->stage = socks5::STATUS_CONNETED;
 
-            break;
+            // 传达回复 (回調 client_send_cb)
+            ev_io_start(loop, client->ww);
+            ev_io_stop(loop, watcher);
+
+
+            utils::msg("remote_send_cb finish here(reply), fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
+
+            return; // 这里需要直接 return, 避免 remote_fd 中的信息额外传回给远端
         }
         default: break;
     } // switch
 
     // 由于 write 一次未必写完, 将分多次写出
     io::writeToFD(loop, watcher, fd, remote->output);
-    remote->output.clear();
 
     utils::msg("remote_send_cb end here, fd: " + to_string(fd) + ", stage: " + to_string(conn->stage));
 }
